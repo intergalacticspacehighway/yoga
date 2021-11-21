@@ -2025,9 +2025,9 @@ static YGCollectFlexItemsRowValues YGCalculateCollectFlexItemsRowValues(
     }
       
     sizeConsumedOnCurrentLineIncludingMinConstraint +=
-        flexBasisWithMinAndMaxConstraints + childMarginMainAxis + gapBetweenItem;
+        flexBasisWithMinAndMaxConstraints + childMarginMainAxis;
     flexAlgoRowMeasurement.sizeConsumedOnCurrentLine +=
-        flexBasisWithMinAndMaxConstraints + childMarginMainAxis + gapBetweenItem;
+        flexBasisWithMinAndMaxConstraints + childMarginMainAxis;
     flexAlgoRowMeasurement.itemsOnLine++;
       colIndex++;
       
@@ -2568,7 +2568,7 @@ static void YGJustifyMainAxis(
               numberOfAutoMarginsOnCurrentLine;
         }
 
-        float spaceForRowGap = rowGap * child->colIndex;
+        float spaceForRowGap = rowGap > betweenMainDim ? rowGap * child->colIndex : 0.0;
         
         if (performLayout) {
           child->setLayoutPosition(
