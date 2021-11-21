@@ -2491,36 +2491,38 @@ static void YGJustifyMainAxis(
   // The space between the beginning and the first element and the space between
   // each two elements.
   float leadingMainDim = 0;
-  float betweenMainDim = 0;
+  float betweenMainDim = rowGap;
   const YGJustify justifyContent = node->getStyle().justifyContent();
+
+  const float minColumnGap = (collectedFlexItemsValues.itemsOnLine - 1) * rowGap;
 
   if (numberOfAutoMarginsOnCurrentLine == 0) {
     switch (justifyContent) {
       case YGJustifyCenter:
-        leadingMainDim = collectedFlexItemsValues.remainingFreeSpace / 2;
+        leadingMainDim = (collectedFlexItemsValues.remainingFreeSpace - minColumnGap) / 2;
         break;
       case YGJustifyFlexEnd:
-        leadingMainDim = collectedFlexItemsValues.remainingFreeSpace;
+        leadingMainDim = (collectedFlexItemsValues.remainingFreeSpace - minColumnGap);
         break;
       case YGJustifySpaceBetween:
         if (collectedFlexItemsValues.itemsOnLine > 1) {
           betweenMainDim =
-              YGFloatMax(collectedFlexItemsValues.remainingFreeSpace, 0) /
-              (collectedFlexItemsValues.itemsOnLine - 1);
+              YGFloatMax(YGFloatMax(collectedFlexItemsValues.remainingFreeSpace, 0) /
+              (collectedFlexItemsValues.itemsOnLine - 1), rowGap);
         } else {
           betweenMainDim = 0;
         }
         break;
       case YGJustifySpaceEvenly:
         // Space is distributed evenly across all elements
-        betweenMainDim = collectedFlexItemsValues.remainingFreeSpace /
-            (collectedFlexItemsValues.itemsOnLine + 1);
+        betweenMainDim = YGFloatMax(collectedFlexItemsValues.remainingFreeSpace /
+            (collectedFlexItemsValues.itemsOnLine + 1), rowGap);
         leadingMainDim = betweenMainDim;
         break;
       case YGJustifySpaceAround:
         // Space on the edges is half of the space between elements
-        betweenMainDim = collectedFlexItemsValues.remainingFreeSpace /
-            collectedFlexItemsValues.itemsOnLine;
+        betweenMainDim = YGFloatMax(collectedFlexItemsValues.remainingFreeSpace /
+            collectedFlexItemsValues.itemsOnLine, rowGap);
         leadingMainDim = betweenMainDim / 2;
         break;
       case YGJustifyFlexStart:
@@ -2531,6 +2533,8 @@ static void YGJustifyMainAxis(
   collectedFlexItemsValues.mainDim =
       leadingPaddingAndBorderMain + leadingMainDim;
   collectedFlexItemsValues.crossDim = 0;
+    // We remove the gap from remaining free space. This seems to be not needed, verify later
+  // collectedFlexItemsValues.remainingFreeSpace -= rowGap > betweenMainDim ? minColumnGap : 0.0;
 
   float maxAscentForCurrentLine = 0;
   float maxDescentForCurrentLine = 0;
@@ -2569,6 +2573,7 @@ static void YGJustifyMainAxis(
         }
 
         betweenMainDim = YGFloatMax(betweenMainDim, rowGap);
+          
         if (performLayout) {
           child->setLayoutPosition(
               childLayout.position[pos[mainAxis]] +
