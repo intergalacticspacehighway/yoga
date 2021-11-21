@@ -83,6 +83,13 @@ static int YGAndroidLog(
 #else
 #define YG_UNUSED(x) (void) (x);
 
+
+template <typename T>
+void myLogger(T x) {
+  std::cout << "My Logger ::" << x << std::endl;
+}
+
+
 static int YGDefaultLog(
     const YGConfigRef config,
     const YGNodeRef node,
@@ -1977,8 +1984,14 @@ static YGCollectFlexItemsRowValues YGCalculateCollectFlexItemsRowValues(
 
   // Add items to the current line until it's full or we run out of items.
   uint32_t endOfLineIndex = startOfLineIndex;
+  
+  uint32_t colIndex = 0;
+    
   for (; endOfLineIndex < node->getChildren().size(); endOfLineIndex++) {
     const YGNodeRef child = node->getChild(endOfLineIndex);
+    
+    child->colIndex = colIndex;
+      
     if (child->getStyle().display() == YGDisplayNone ||
         child->getStyle().positionType() == YGPositionTypeAbsolute) {
       continue;
@@ -1994,7 +2007,9 @@ static YGCollectFlexItemsRowValues YGCalculateCollectFlexItemsRowValues(
             mainAxisownerSize)
             .unwrap();
 
-      float gapBetweenItem = endOfLineIndex > 0 ? rowGap : 0.0;
+      
+      // Do not add gap in first item
+      float gapBetweenItem = child->colIndex > 0 ? rowGap : 0.0;
 
     // If this is a multi-line flow and this item pushes us over the available
     // size, we've hit the end of the current line. Break out of the loop and
@@ -2003,15 +2018,19 @@ static YGCollectFlexItemsRowValues YGCalculateCollectFlexItemsRowValues(
                 flexBasisWithMinAndMaxConstraints + childMarginMainAxis + gapBetweenItem  >
             availableInnerMainDim &&
         isNodeFlexWrap && flexAlgoRowMeasurement.itemsOnLine > 0) {
+    
+        
+        colIndex = 0;
       break;
     }
-
+      
     sizeConsumedOnCurrentLineIncludingMinConstraint +=
-        flexBasisWithMinAndMaxConstraints + childMarginMainAxis;
+        flexBasisWithMinAndMaxConstraints + childMarginMainAxis + gapBetweenItem;
     flexAlgoRowMeasurement.sizeConsumedOnCurrentLine +=
         flexBasisWithMinAndMaxConstraints + childMarginMainAxis + gapBetweenItem;
     flexAlgoRowMeasurement.itemsOnLine++;
-
+      colIndex++;
+      
     if (child->isNodeFlexible()) {
       flexAlgoRowMeasurement.totalFlexGrowFactors += child->resolveFlexGrow();
 
@@ -2037,6 +2056,11 @@ static YGCollectFlexItemsRowValues YGCalculateCollectFlexItemsRowValues(
     flexAlgoRowMeasurement.totalFlexShrinkScaledFactors = 1;
   }
   flexAlgoRowMeasurement.endOfLineIndex = endOfLineIndex;
+    
+    myLogger("items on line");
+    
+    myLogger(flexAlgoRowMeasurement.itemsOnLine);
+    
   return flexAlgoRowMeasurement;
 }
 
@@ -2544,7 +2568,7 @@ static void YGJustifyMainAxis(
               numberOfAutoMarginsOnCurrentLine;
         }
 
-        float spaceForRowGap = rowGap * (i % collectedFlexItemsValues.itemsOnLine);
+        float spaceForRowGap = rowGap * child->colIndex;
         
         if (performLayout) {
           child->setLayoutPosition(
@@ -2619,10 +2643,15 @@ static void YGJustifyMainAxis(
   }
 }
 
-template <typename T>
-void myLogger(T x) {
-  std::cout << "My Logger ::" << x << std::endl;
-}
+
+
+// Based on my understanding of this alog, we get the root view over here.
+// The root view recursively calls it's children and all the nodes receive their placement info based on their dimensions etc.
+// I guess max content dimension is calculated on the native side and passed here
+// Questions
+// 1. How do Text nodes get their height/width
+
+
 
 //
 // This is the main routine that implements a subset of the flexbox layout
@@ -2781,7 +2810,11 @@ static void YGNodelayoutImpl(
   node->setLayoutPadding(
       node->getTrailingPadding(flexColumnDirection, ownerWidth).unwrap(),
       YGEdgeBottom);
-
+    
+  // the below function sets the height/width of a node using measure function
+  // I think this measure function comes from native side. e.g. Text nodes.
+  // It also skips calling measure if height/width is given
+  // not sure why it returns though. I think due to recursion?
   if (node->hasMeasureFunc()) {
     YGNodeWithMeasureFuncSetMeasuredDimensions(
         node,
@@ -2798,6 +2831,7 @@ static void YGNodelayoutImpl(
   }
 
   const uint32_t childCount = YGNodeGetChildCount(node);
+  // when childCount is 0 we can set the height/width using container's styles or availableWidth/height
   if (childCount == 0) {
     YGNodeEmptyContainerSetMeasuredDimensions(
         node,
@@ -4220,7 +4254,7 @@ YOGA_EXPORT void YGNodeCalculateLayoutWithContext(
     YGRoundToPixelGrid(node, node->getConfig()->pointScaleFactor, 0.0f, 0.0f);
 
 #ifdef DEBUG
-    if (node->getConfig()->printTree) {
+    if (true) {
       YGNodePrint(
           node,
           (YGPrintOptions) (YGPrintOptionsLayout | YGPrintOptionsChildren | YGPrintOptionsStyle));

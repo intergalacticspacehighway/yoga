@@ -85,6 +85,8 @@ private:
   using CompactValue = facebook::yoga::detail::CompactValue;
 
 public:
+    int rowIndex = 0;
+    int colIndex = 0;
   YGNode() : YGNode{YGConfigGetDefault()} {}
   explicit YGNode(const YGConfigRef config) : config_{config} {
     if (config->useWebDefaults) {
