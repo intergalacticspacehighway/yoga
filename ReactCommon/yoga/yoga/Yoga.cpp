@@ -2491,7 +2491,7 @@ static void YGJustifyMainAxis(
   // The space between the beginning and the first element and the space between
   // each two elements.
   float leadingMainDim = 0;
-  float betweenMainDim = rowGap;
+  float betweenMainDim = 0;
   const YGJustify justifyContent = node->getStyle().justifyContent();
 
 
@@ -2507,7 +2507,7 @@ static void YGJustifyMainAxis(
         if (collectedFlexItemsValues.itemsOnLine > 1) {
           betweenMainDim =
               YGFloatMax(collectedFlexItemsValues.remainingFreeSpace, 0) /
-              (collectedFlexItemsValues.itemsOnLine - 1) + rowGap;
+              (collectedFlexItemsValues.itemsOnLine - 1);
         } else {
           betweenMainDim = 0;
         }
@@ -2515,13 +2515,13 @@ static void YGJustifyMainAxis(
       case YGJustifySpaceEvenly:
         // Space is distributed evenly across all elements
         betweenMainDim = (collectedFlexItemsValues.remainingFreeSpace) /
-            (collectedFlexItemsValues.itemsOnLine + 1) + rowGap;
+            (collectedFlexItemsValues.itemsOnLine + 1);
         leadingMainDim = betweenMainDim;
         break;
       case YGJustifySpaceAround:
         // Space on the edges is half of the space between elements
         betweenMainDim = (collectedFlexItemsValues.remainingFreeSpace) /
-            collectedFlexItemsValues.itemsOnLine + rowGap;
+            collectedFlexItemsValues.itemsOnLine;
         leadingMainDim = betweenMainDim / 2;
         break;
       case YGJustifyFlexStart:
@@ -2596,7 +2596,7 @@ static void YGJustifyMainAxis(
         } else {
           // The main dimension is the sum of all the elements dimension plus
           // the spacing.
-          collectedFlexItemsValues.mainDim += betweenMainDim +
+          collectedFlexItemsValues.mainDim += betweenMainDim + ((child->colIndex != collectedFlexItemsValues.itemsOnLine - 1) ? rowGap : 0.0) +
               YGNodeDimWithMargin(child, mainAxis, availableInnerWidth);
 
           if (isNodeBaselineLayout) {
