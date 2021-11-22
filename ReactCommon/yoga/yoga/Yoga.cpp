@@ -2894,8 +2894,11 @@ static void YGNodelayoutImpl(
   const float paddingAndBorderAxisColumn =
       isMainAxisRow ? paddingAndBorderAxisCross : paddingAndBorderAxisMain;
 
-  float rowGap = 10.0;
-//  float columnGap = 10.0;
+    float propRowGap = 20.0;
+    float propColumnGap = 10.0;
+    
+    float rowGap = isMainAxisRow ? propRowGap : propColumnGap;
+    float columnGap = isMainAxisRow ? propColumnGap : propRowGap;
 
   // STEP 2: DETERMINE AVAILABLE SIZE IN MAIN AND CROSS DIRECTIONS
   float availableInnerWidth = YGNodeCalculateAvailableInnerDim(
@@ -2968,7 +2971,7 @@ static void YGNodelayoutImpl(
         availableInnerMainDim,
         startOfLineIndex,
         lineCount,
-        rowGap);
+                                                                    columnGap);
     endOfLineIndex = collectedFlexItemsValues.endOfLineIndex;
 
     // If we don't need to measure the cross axis, we can skip the entire flex
@@ -3096,7 +3099,7 @@ static void YGNodelayoutImpl(
         availableInnerWidth,
         performLayout,
         layoutContext,
-        rowGap);
+                      columnGap);
 
     float containerCrossAxis = availableInnerCrossDim;
     if (measureModeCrossDim == YGMeasureModeUndefined ||
