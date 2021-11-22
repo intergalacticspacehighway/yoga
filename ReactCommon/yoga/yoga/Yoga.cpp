@@ -2957,6 +2957,9 @@ static void YGNodelayoutImpl(
   YGCollectFlexItemsRowValues collectedFlexItemsValues;
   for (; endOfLineIndex < childCount;
        lineCount++, startOfLineIndex = endOfLineIndex) {
+    
+    totalLineCrossDim += (lineCount > 0 ? rowGap : 0.0);
+    
     collectedFlexItemsValues = YGCalculateCollectFlexItemsRowValues(
         node,
         ownerDirection,
@@ -3376,10 +3379,12 @@ static void YGNodelayoutImpl(
             continue;
           }
           if (child->getStyle().positionType() != YGPositionTypeAbsolute) {
+            const float effectiveRowGap = child->getLineIndex() * rowGap;
+              
             switch (YGNodeAlignItem(node, child)) {
               case YGAlignFlexStart: {
                 child->setLayoutPosition(
-                    currentLead +
+                    currentLead + effectiveRowGap +
                         child->getLeadingMargin(crossAxis, availableInnerWidth)
                             .unwrap(),
                     pos[crossAxis]);
@@ -3387,7 +3392,7 @@ static void YGNodelayoutImpl(
               }
               case YGAlignFlexEnd: {
                 child->setLayoutPosition(
-                    currentLead + lineHeight -
+                    currentLead + effectiveRowGap + lineHeight -
                         child->getTrailingMargin(crossAxis, availableInnerWidth)
                             .unwrap() -
                         child->getLayout().measuredDimensions[dim[crossAxis]],
@@ -3399,13 +3404,13 @@ static void YGNodelayoutImpl(
                     child->getLayout().measuredDimensions[dim[crossAxis]];
 
                 child->setLayoutPosition(
-                    currentLead + (lineHeight - childHeight) / 2,
+                    currentLead + effectiveRowGap + (lineHeight - childHeight) / 2,
                     pos[crossAxis]);
                 break;
               }
               case YGAlignStretch: {
                 child->setLayoutPosition(
-                    currentLead +
+                    currentLead + effectiveRowGap +
                         child->getLeadingMargin(crossAxis, availableInnerWidth)
                             .unwrap(),
                     pos[crossAxis]);
@@ -3458,7 +3463,7 @@ static void YGNodelayoutImpl(
               }
               case YGAlignBaseline: {
                 child->setLayoutPosition(
-                    currentLead + maxAscentForCurrentLine -
+                    currentLead + effectiveRowGap + maxAscentForCurrentLine -
                         YGBaseline(child, layoutContext) +
                         child
                             ->getLeadingPosition(
