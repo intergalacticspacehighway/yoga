@@ -513,11 +513,24 @@ YOGA_EXPORT float YGNodeStyleGetFlexGrow(const YGNodeConstRef node) {
       : node->getStyle().flexGrow().unwrap();
 }
 
+YOGA_EXPORT float YGNodeStyleGetRowGap(const YGNodeConstRef node) {
+  return node->getStyle().rowGap().isUndefined()
+      ? 0.0
+      : node->getStyle().rowGap().unwrap();
+}
+
 YOGA_EXPORT float YGNodeStyleGetFlexShrink(const YGNodeConstRef node) {
   return node->getStyle().flexShrink().isUndefined()
       ? (node->getConfig()->useWebDefaults ? kWebDefaultFlexShrink
                                            : kDefaultFlexShrink)
       : node->getStyle().flexShrink().unwrap();
+}
+
+
+YOGA_EXPORT float YGNodeStyleGetColumnGap(const YGNodeConstRef node) {
+  return node->getStyle().columnGap().isUndefined()
+      ? 0.0
+      : node->getStyle().columnGap().unwrap();
 }
 
 namespace {
@@ -681,6 +694,24 @@ YOGA_EXPORT void YGNodeStyleSetFlexGrow(
   updateStyle<MSVC_HINT(flexGrow)>(
       node, &YGStyle::flexGrow, YGFloatOptional{flexGrow});
 }
+
+// TODO(T26792433): Change the API to accept YGFloatOptional.
+YOGA_EXPORT void YGNodeStyleSetRowGap(
+    const YGNodeRef node,
+    const float rowGap) {
+  updateStyle<MSVC_HINT(rowGap)>(
+      node, &YGStyle::rowGap, YGFloatOptional{rowGap});
+}
+
+
+// TODO(T26792433): Change the API to accept YGFloatOptional.
+YOGA_EXPORT void YGNodeStyleSetColumnGap(
+    const YGNodeRef node,
+    const float columnGap) {
+  updateStyle<MSVC_HINT(columnGap)>(
+      node, &YGStyle::columnGap, YGFloatOptional{columnGap});
+}
+
 
 // TODO(T26792433): Change the API to accept YGFloatOptional.
 YOGA_EXPORT void YGNodeStyleSetFlexShrink(
@@ -2894,9 +2925,9 @@ static void YGNodelayoutImpl(
   const float paddingAndBorderAxisColumn =
       isMainAxisRow ? paddingAndBorderAxisCross : paddingAndBorderAxisMain;
 
-    float propRowGap = 20.0;
-    float propColumnGap = 10.0;
-    
+    float propRowGap = node->resolveRowGap();
+    float propColumnGap = node->resolveColumnGap();
+
     float rowGap = isMainAxisRow ? propRowGap : propColumnGap;
     float columnGap = isMainAxisRow ? propColumnGap : propRowGap;
 

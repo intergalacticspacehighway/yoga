@@ -340,6 +340,8 @@ public:
   void cloneChildrenIfNeeded(void*);
   void markDirtyAndPropogate();
   float resolveFlexGrow() const;
+  float resolveRowGap() const;
+  float resolveColumnGap() const;
   float resolveFlexShrink() const;
   bool isNodeFlexible();
   bool didUseLegacyFlag();
