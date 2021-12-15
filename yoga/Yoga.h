@@ -196,6 +196,12 @@ WIN_EXPORT float YGNodeStyleGetFlexGrow(YGNodeConstRef node);
 WIN_EXPORT void YGNodeStyleSetFlexShrink(YGNodeRef node, float flexShrink);
 WIN_EXPORT float YGNodeStyleGetFlexShrink(YGNodeConstRef node);
 
+WIN_EXPORT void YGNodeStyleSetRowGap(YGNodeRef node, float rowGap);
+WIN_EXPORT float YGNodeStyleGetRowGap(YGNodeConstRef node);
+
+WIN_EXPORT void YGNodeStyleSetColumnGap(YGNodeRef node, float columnGap);
+WIN_EXPORT float YGNodeStyleGetColumnGap(YGNodeConstRef node);
+
 WIN_EXPORT void YGNodeStyleSetFlexBasis(YGNodeRef node, float flexBasis);
 WIN_EXPORT void YGNodeStyleSetFlexBasisPercent(YGNodeRef node, float flexBasis);
 WIN_EXPORT void YGNodeStyleSetFlexBasisAuto(YGNodeRef node);
