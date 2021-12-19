@@ -146,30 +146,38 @@ YGFloatOptional YGNode::getLeadingMargin(
     
         YGFloatOptional value = YGResolveValueMargin(leadingMargin, widthSize);
 
-
         if (owner_ != nullptr) {
+          
+          // when parent's flex direction is row
+            // columnGap - adds margin(Left/Start) to items which is not first in the "same" line.
+            // rowGap - adds marginTop to items which is not first in flex lines (wrap lines).
+
+          // when parent's flex direction is column
+            // columnGap - adds margin(Left/Start) to items which is not first in flex lines (wrap lines).
+            // rowGap - adds marginTop to items which is not first in "same" line
             if (YGFlexDirectionIsRow(owner_->getStyle().flexDirection())) {
                  if (this->getRelativeToLineIndex() > 0 && YGFlexDirectionIsRow(axis)) {
                            float columnGap = owner_->resolveColumnGap();
-                               float newMarginLeft = value.isUndefined() || (value.unwrap() == 0.0f) ? columnGap :  value.unwrap() + columnGap;
-                               return YGFloatOptional(newMarginLeft);
+                               float newMarginStart = value.isUndefined() || (value.unwrap() == 0.0f) ? columnGap :  value.unwrap() + columnGap;
+                               return YGFloatOptional(newMarginStart);
                        }
                  else if (this->getLineIndex() > 0 && YGFlexDirectionIsColumn(axis)) {
                                float rowGap =  owner_->resolveRowGap();
                                float newMarginTop = value.isUndefined() || (value.unwrap() == 0.0f) ? rowGap :  value.unwrap() + rowGap;
                                return YGFloatOptional(newMarginTop);
                        }
+                
             } else {
-                if (this->getRelativeToLineIndex() > 0 && YGFlexDirectionIsColumn(axis) && owner_ != nullptr) {
+                if (this->getRelativeToLineIndex() > 0 && YGFlexDirectionIsColumn(axis)) {
                     float rowGap =  owner_->resolveRowGap();
                     float newMarginTop = value.isUndefined() || (value.unwrap() == 0.0f) ? rowGap :  value.unwrap() + rowGap;
                     return YGFloatOptional(newMarginTop);
-                      }
-                else if (this->getLineIndex() > 0 && YGFlexDirectionIsRow(axis)  && owner_ != nullptr) {
+                  }
+                else if (this->getLineIndex() > 0 && YGFlexDirectionIsRow(axis)) {
                               float columnGap =  owner_->resolveColumnGap();
-                              float newMarginLeft = value.isUndefined() || (value.unwrap() == 0.0f) ? columnGap :  value.unwrap() + columnGap;
-                              return YGFloatOptional(newMarginLeft);
-                      }
+                              float newMarginStart = value.isUndefined() || (value.unwrap() == 0.0f) ? columnGap :  value.unwrap() + columnGap;
+                              return YGFloatOptional(newMarginStart);
+                  }
 
             }
         
@@ -482,13 +490,19 @@ float YGNode::resolveRowGap() const {
   if (owner_ == nullptr) {
     return 0.0;
   }
+
+  float rowGap = 0.0;
     
-    if (!style_.rowGap().isUndefined()) {
-        return style_.rowGap().unwrap();
-    }
+  if (!style_.gap().isUndefined()) {
+    rowGap = style_.gap().unwrap();
+  }
+    
+  if (!style_.rowGap().isUndefined()) {
+    rowGap = style_.rowGap().unwrap();
+  }
     
 
-  return 0.0;
+  return rowGap;
 }
 
 
@@ -497,12 +511,17 @@ float YGNode::resolveColumnGap() const {
     return 0.0;
   }
     
-    if (!style_.columnGap().isUndefined()) {
-        return style_.columnGap().unwrap();
-    }
+  float columnGap = 0.0;
     
-
-  return 0.0;
+  if (!style_.gap().isUndefined()) {
+        columnGap = style_.gap().unwrap();
+  }
+    
+  if (!style_.columnGap().isUndefined()) {
+        columnGap = style_.columnGap().unwrap();
+  }
+    
+  return columnGap;
 }
 
 float YGNode::resolveFlexShrink() const {
