@@ -31,6 +31,7 @@
 #include <yoga/numeric/Comparison.h>
 #include <yoga/numeric/FloatOptional.h>
 #include <yoga/algorithm/grid/GridLayout.h>
+#include <yoga/algorithm/grid/TrackSizing.h>
 
 namespace facebook::yoga {
 
@@ -2169,9 +2170,9 @@ static void calculateLayoutImpl(
           0.0f,
           availableInnerWidth,
           availableInnerHeight);
+      }
     }
   }
-}
 
 //
 // This is a wrapper around the calculateLayoutImpl function. It determines
@@ -2195,6 +2196,7 @@ bool calculateLayoutInternal(
     LayoutData& layoutMarkerData,
     uint32_t depth,
     const uint32_t generationCount) {
+
   LayoutResults* layout = &node->getLayout();
 
   depth++;

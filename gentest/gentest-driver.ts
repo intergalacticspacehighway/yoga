@@ -96,15 +96,27 @@ for (const fixturePath of fixtures) {
   // start/end in the entire fixture
   const ltrFixture = fixture
     // prevent replacing in grid properties and alignment properties (justify/align-*)
-    .replaceAll(/(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )start/g, 'left')
-    .replaceAll(/(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )end/g, 'right')
+    .replaceAll(
+      /(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )start/g,
+      'left',
+    )
+    .replaceAll(
+      /(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )end/g,
+      'right',
+    )
     .replaceAll('flex-left', 'flex-start')
     .replaceAll('flex-right', 'flex-end');
 
   const rtlFixture = fixture
     // prevent replacing in grid properties and alignment properties (justify/align-*)
-    .replaceAll(/(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )start/g, 'right')
-    .replaceAll(/(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )end/g, 'left')
+    .replaceAll(
+      /(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )start/g,
+      'right',
+    )
+    .replaceAll(
+      /(?<!grid-column-)(?<!grid-row-)(?<!justify-self: )(?<!align-self: )(?<!justify-content: )(?<!align-content: )(?<!justify-items: )(?<!align-items: )end/g,
+      'left',
+    )
     .replaceAll('flex-right', 'flex-start')
     .replaceAll('flex-left', 'flex-end');
 
@@ -159,4 +171,4 @@ for (const fixturePath of fixtures) {
   }
 }
 await fs.unlink(`${gentestDir}/test.html`);
-await driver.quit();
+// await driver.quit();

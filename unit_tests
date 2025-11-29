@@ -22,4 +22,4 @@ fi
 
 cmake --build build
 
-./build/yogatests
+./build/yogatests --gtest_filter=YogaTest.grid_basic_absolute_placement

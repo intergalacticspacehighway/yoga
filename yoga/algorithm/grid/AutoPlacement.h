@@ -42,7 +42,7 @@ struct GridItemTrackPlacement {
       // If the start line is equal to the end line, remove the end line.
       else if (normalizedStartLine == normalizedEndLine) {
           placement.start = normalizedStartLine;
-          placement.end = 0;
+          placement.end = normalizedStartLine + 1;
           placement.span = 1;
       }
       else {
@@ -444,7 +444,7 @@ struct ResolvedAutoPlacement {
   int32_t maxColumnEnd;
   int32_t maxRowEnd;
 
-  // Offset column and row so they starts at 0 index
+  // Offset column and row so they starts at 0 index of implicit grid lines
   // also casts start and end values from int32_t to size_t
   static ResolvedAutoPlacement resolveGridItemPlacements(Node* node) {
     auto autoPlacement = AutoPlacement::performAutoPlacement(node);

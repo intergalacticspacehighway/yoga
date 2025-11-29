@@ -317,18 +317,23 @@ function setupTestTree(
           e.YGNodeStyleSetFlexBasis(nodeName, pointValue(e, node.style[style]));
           break;
         case 'left':
-          if (genericNode.rawStyle.indexOf('start:') >= 0) {
-            e.YGNodeStyleSetPosition(
-              nodeName,
-              e.YGEdgeStart,
-              pointValue(e, node.style[style]),
-            );
-          } else {
-            e.YGNodeStyleSetPosition(
-              nodeName,
-              e.YGEdgeLeft,
-              pointValue(e, node.style[style]),
-            );
+          {
+            if (
+              genericNode.rawStyle.indexOf('start:') >= 0 &&
+              genericNode.rawStyle.indexOf('-start:') < 0
+            ) {
+              e.YGNodeStyleSetPosition(
+                nodeName,
+                e.YGEdgeStart,
+                pointValue(e, node.style[style]),
+              );
+            } else {
+              e.YGNodeStyleSetPosition(
+                nodeName,
+                e.YGEdgeLeft,
+                pointValue(e, node.style[style]),
+              );
+            }
           }
           break;
         case 'top':
@@ -339,7 +344,10 @@ function setupTestTree(
           );
           break;
         case 'right':
-          if (genericNode.rawStyle.indexOf('end:') >= 0) {
+          if (
+            genericNode.rawStyle.indexOf('end:') >= 0 &&
+            genericNode.rawStyle.indexOf('-end:') < 0
+          ) {
             e.YGNodeStyleSetPosition(
               nodeName,
               e.YGEdgeEnd,

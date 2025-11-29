@@ -9,7 +9,7 @@
 #include <yoga/algorithm/grid/CalculateAvailableInnerDimension.h>
 #include <yoga/algorithm/BoundAxis.h>
 #include <yoga/algorithm/grid/TrackSizing.h>
-#include <yoga/algorithm/AbsoluteLayout.h>
+#include <yoga/algorithm/grid/GridAbsoluteLayout.h>
 
 namespace facebook::yoga {
 
@@ -484,8 +484,7 @@ void calculateGridLayoutInternal(Node* node,
           child->processDimensions();
         }
       }
-
-      layoutAbsoluteDescendants(
+      layoutAbsoluteDescendantsGrid(
           node,
           node,
           widthSizingMode,
@@ -496,7 +495,11 @@ void calculateGridLayoutInternal(Node* node,
           0.0f,
           0.0f,
           availableInnerWidth,
-          availableInnerHeight);
+          availableInnerHeight,
+          columnTracks,
+          rowTracks,
+          autoPlacement.minColumnStart,
+          autoPlacement.minRowStart);
     }
   }
 
