@@ -138,17 +138,6 @@ void calculateGridLayoutInternal(Node* node,
         return containingBlockHeight;
       });
 
-      if (!widthIsDefinite) {
-        auto totalTrackWidth = trackSizing.getTotalBaseSize(Dimension::Width);
-        containerInnerWidth = boundAxis(
-          node,
-          FlexDirection::Row,
-          direction,
-          totalTrackWidth,
-          ownerWidth,
-          ownerWidth);
-      }
-      
       // 11.1.2 Next, the track sizing algorithm resolves the sizes of the grid rows.
       // To find the inline-axis available space for any items whose block-axis size contributions require it,
       // use the grid column sizes calculated in the previous step. If the grid container's inline size is definite,
@@ -168,6 +157,49 @@ void calculateGridLayoutInternal(Node* node,
         }
         return containingBlockWidth;
       });
+
+      // 11.1.3 Then, if the min-content contribution of any grid item has changed based on
+      // the row sizes and alignment calculated in step 2, re-resolve the sizes of the grid
+      // columns with the new min-content and max-content contributions (once only).
+      trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
+        float containingBlockHeight = 0.0f;
+        for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
+          containingBlockHeight += rowTracks[i].baseSize;
+          if (i < item.rowEnd - 1) {
+            containingBlockHeight += effectiveRowGap;
+          }
+        }
+        return containingBlockHeight;
+      });
+
+      // 11.1.4 Next, if the min-content contribution of any grid item has changed based on
+      // the column sizes and alignment calculated in step 3, re-resolve the sizes of the
+      // grid rows with the new min-content and max-content contributions (once only).
+      effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
+
+      trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
+        float containingBlockWidth = 0.0f;
+
+        for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
+          containingBlockWidth += columnTracks[i].baseSize;
+          if (i < item.columnEnd - 1) {
+            containingBlockWidth += effectiveColumnGap;
+          }
+        }
+        return containingBlockWidth;
+      });
+
+      // Now calculate container dimensions from the final track sizes
+      if (!widthIsDefinite) {
+        auto totalTrackWidth = trackSizing.getTotalBaseSize(Dimension::Width);
+        containerInnerWidth = boundAxis(
+          node,
+          FlexDirection::Row,
+          direction,
+          totalTrackWidth,
+          ownerWidth,
+          ownerWidth);
+      }
 
       if (!heightIsDefinite) {
         auto totalTrackHeight = trackSizing.getTotalBaseSize(Dimension::Height);
@@ -228,6 +260,7 @@ void calculateGridLayoutInternal(Node* node,
   // https://www.w3.org/TR/css-grid-1/#algo-grid-sizing
   // 11.1.1 First, the track sizing algorithm is used to resolve the sizes of the grid columns.
   auto effectiveRowGap = trackSizing.calculateEffectiveRowGapForEstimation();
+
   trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
     float containingBlockHeight = 0.0f;
     for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
@@ -247,6 +280,47 @@ void calculateGridLayoutInternal(Node* node,
   // 11.1.2 Next, the track sizing algorithm resolves the sizes of the grid rows.
   auto effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
 
+  trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
+    float containingBlockWidth = 0.0f;
+
+    for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
+      containingBlockWidth += columnTracks[i].baseSize;
+      if (i < item.columnEnd - 1) {
+        containingBlockWidth += effectiveColumnGap;
+      }
+    }
+    return containingBlockWidth;
+  });
+
+  // 11.1.3 Then, if the min-content contribution of any grid item has changed based on
+  // the row sizes and alignment calculated in step 2, re-resolve the sizes of the grid
+  // columns with the new min-content and max-content contributions (once only).
+  //
+  // This is necessary for items whose inline size depends on block size, such as:
+  // - Items with aspect-ratio whose width depends on computed row height
+  // - Wrapped column flex containers
+  // - Orthogonal flows
+
+  // Re-initialize column track sizes and re-run column sizing with actual row heights
+  trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
+    float containingBlockHeight = 0.0f;
+    for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
+      containingBlockHeight += rowTracks[i].baseSize;
+      if (i < item.rowEnd - 1) {
+        containingBlockHeight += effectiveRowGap;
+      }
+    }
+    return containingBlockHeight;
+  });
+
+  // 11.1.4 Next, if the min-content contribution of any grid item has changed based on
+  // the column sizes and alignment calculated in step 3, re-resolve the sizes of the
+  // grid rows with the new min-content and max-content contributions (once only).
+
+  // Recalculate effective column gap with new column sizes
+  effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
+
+  // Re-run row sizing with the new column sizes
   trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
     float containingBlockWidth = 0.0f;
 
@@ -302,6 +376,23 @@ void calculateGridLayoutInternal(Node* node,
     const auto marginBlockStart = item.node->style().computeInlineStartMargin(FlexDirection::Column, direction, containingBlockWidth);
     const auto marginBlockEnd = item.node->style().computeInlineEndMargin(FlexDirection::Column, direction, containingBlockWidth);
 
+    auto itemConstraints = trackSizing.calculateItemConstraints(item, containingBlockWidth, containingBlockHeight);
+
+    calculateLayoutInternal(
+        item.node,
+        itemConstraints.width,
+        itemConstraints.height,
+        direction,
+        itemConstraints.widthSizingMode,
+        itemConstraints.heightSizingMode,
+        containingBlockWidth,
+        containingBlockHeight,
+        true,
+        LayoutPassReason::kGridLayout,
+        layoutMarkerData,
+        depth,
+        generationCount);
+
     auto justifySelf = item.node->style().justifySelf();
     if (justifySelf == Justify::Auto) {
       justifySelf = node->style().justifyItems();
@@ -311,79 +402,6 @@ void calculateGridLayoutInternal(Node* node,
     if (alignSelf == Align::Auto) {
       alignSelf = node->style().alignItems();
     }
-    
-    SizingMode childWidthSizingMode = SizingMode::StretchFit;
-    SizingMode childHeightSizingMode = SizingMode::StretchFit;
-    float childWidth = containingBlockWidth;
-    float childHeight = containingBlockHeight;
-
-    // https://www.w3.org/TR/css-grid-1/#alignment
-    // if justify-self or align-self compute to a value other than stretch or margins are auto, 
-    // grid items will auto-size to fit their content.
-    bool hasMarginInlineAuto = item.node->style().flexStartMarginIsAuto(FlexDirection::Row, direction) 
-      || item.node->style().flexEndMarginIsAuto(FlexDirection::Row, direction);
-    if (justifySelf != Justify::Stretch || hasMarginInlineAuto) {
-      childWidthSizingMode = SizingMode::FitContent;
-    }
-
-    bool hasMarginBlockAuto = item.node->style().flexStartMarginIsAuto(FlexDirection::Column, direction) 
-      || item.node->style().flexEndMarginIsAuto(FlexDirection::Column, direction);
-    if (alignSelf != Align::Stretch || hasMarginBlockAuto) {
-      childHeightSizingMode = SizingMode::FitContent;
-    }
-    
-    if (item.node->hasDefiniteLength(Dimension::Width, containingBlockWidth)) {
-      childWidth = item.node->getResolvedDimension(
-          direction,
-          dimension(FlexDirection::Row),
-          containingBlockWidth,
-          containingBlockWidth).unwrap() + marginInlineStart + marginInlineEnd;
-      childWidthSizingMode = SizingMode::StretchFit;
-    }
-
-    if (item.node->hasDefiniteLength(Dimension::Height, containingBlockHeight)) {
-      childHeight = item.node->getResolvedDimension(
-          direction,
-          dimension(FlexDirection::Column),
-          containingBlockHeight,
-          containingBlockWidth).unwrap() + marginBlockStart + marginBlockEnd;
-      childHeightSizingMode = SizingMode::StretchFit;
-    }
-
-    const auto& childStyle = item.node->style();
-    if (childStyle.aspectRatio().isDefined()) {
-      // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
-      // a non-replaced absolutely-positioned box treats justify-self: normal as stretch, not as start (CSS Box Alignment 3 § 6.1.2 Absolutely-Positioned Boxes), even if it has a preferred aspect ratio
-      // i.e. aspect ratio is only applied when item is not stretch aligned or margin is auto (auto margin items are not stretched) 
-      if (childWidthSizingMode == SizingMode::StretchFit &&
-          childHeightSizingMode != SizingMode::StretchFit && (alignSelf != Align::Stretch || hasMarginBlockAuto)) {
-        if (!yoga::inexactEquals(childStyle.aspectRatio().unwrap(), 0.0f)) {
-          childHeight = marginBlockStart + marginBlockEnd +
-          (childWidth - marginInlineStart - marginInlineEnd) / childStyle.aspectRatio().unwrap();
-          childHeightSizingMode = SizingMode::StretchFit;
-        }
-      } else if (childHeightSizingMode == SizingMode::StretchFit &&
-                  childWidthSizingMode != SizingMode::StretchFit && (justifySelf != Justify::Stretch || hasMarginInlineAuto)) {
-        childWidth = marginInlineStart + marginInlineEnd +
-            (childHeight - marginBlockStart - marginBlockEnd) * childStyle.aspectRatio().unwrap();
-        childWidthSizingMode = SizingMode::StretchFit;
-      }
-    }
-
-    calculateLayoutInternal(
-        item.node,
-        childWidth,
-        childHeight,
-        direction,
-        childWidthSizingMode,
-        childHeightSizingMode,
-        containingBlockWidth,
-        containingBlockHeight,
-        true,
-        LayoutPassReason::kGridLayout,
-        layoutMarkerData,
-        depth,
-        generationCount);
 
     // since we know the item width and grid width, we can do the alignment here.
     // alignment of grid items happen in the grid area
