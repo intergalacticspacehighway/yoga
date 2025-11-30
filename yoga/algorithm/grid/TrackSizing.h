@@ -108,8 +108,7 @@ struct TrackSizing {
     runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
       float itemAreaHeight = 0.0f;
       for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
-        if (rowTracks[i].maxSizingFunction.isDefined() &&
-            rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).isDefined()) {
+        if (isFixedSizingFunction(rowTracks[i].maxSizingFunction, containerInnerHeight)) {
           itemAreaHeight += rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).unwrap();
           if (i < item.rowEnd - 1) {
             itemAreaHeight += effectiveRowGap;

@@ -35,7 +35,7 @@ TEST(YogaTest, grid_aspect_ratio_reresolution_auto_rows) {
   YGNodeInsertChild(root, root_child0, 0);
 
   YGNodeRef root_child1 = YGNodeNewWithConfig(config);
-  YGNodeStyleSetAspectRatio(root_child1, 2.0f);
+  YGNodeStyleSetAspectRatio(root_child1, 2 / 1);
   YGNodeInsertChild(root, root_child1, 1);
   YGNodeCalculateLayout(root, YGUndefined, YGUndefined, YGDirectionLTR);
 
