@@ -98,6 +98,74 @@ struct TrackSizing {
     stretchAutoTracks(dimension);
   }
 
+  // https://www.w3.org/TR/css-grid-1/#algo-grid-sizing
+  // Runs all 4 steps of the Grid Sizing Algorithm (11.1.1 through 11.1.4)
+  void runGridSizingAlgorithm() {
+    // 11.1.1 First, the track sizing algorithm is used to resolve the sizes of the grid columns.
+    // For items needing block-axis size: use definite row sizes if available, else undefined.
+    auto effectiveRowGap = calculateEffectiveRowGapForEstimation();
+
+    runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
+      float itemAreaHeight = 0.0f;
+      for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
+        if (rowTracks[i].maxSizingFunction.isDefined() &&
+            rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).isDefined()) {
+          itemAreaHeight += rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).unwrap();
+          if (i < item.rowEnd - 1) {
+            itemAreaHeight += effectiveRowGap;
+          }
+        } else {
+          return YGUndefined;
+        }
+      }
+      return itemAreaHeight;
+    });
+
+    // 11.1.2 Next, the track sizing algorithm resolves the sizes of the grid rows.
+    // Uses actual column sizes from step 11.1.1.
+    auto effectiveColumnGap = calculateEffectiveColumnGapFromBaseSizes();
+
+    runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
+      float itemAreaWidth = 0.0f;
+      for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
+        itemAreaWidth += columnTracks[i].baseSize;
+        if (i < item.columnEnd - 1) {
+          itemAreaWidth += effectiveColumnGap;
+        }
+      }
+      return itemAreaWidth;
+    });
+
+    // 11.1.3 Re-resolve column sizes with actual row heights.
+    // Needed for items whose inline size depends on block size (e.g., aspect-ratio).
+    effectiveRowGap = calculateEffectiveRowGapFromBaseSizes();
+
+    runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
+      float containingBlockHeight = 0.0f;
+      for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
+        containingBlockHeight += rowTracks[i].baseSize;
+        if (i < item.rowEnd - 1) {
+          containingBlockHeight += effectiveRowGap;
+        }
+      }
+      return containingBlockHeight;
+    });
+
+    // 11.1.4 Re-resolve row sizes with actual column widths.
+    effectiveColumnGap = calculateEffectiveColumnGapFromBaseSizes();
+
+    runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
+      float containingBlockWidth = 0.0f;
+      for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
+        containingBlockWidth += columnTracks[i].baseSize;
+        if (i < item.columnEnd - 1) {
+          containingBlockWidth += effectiveColumnGap;
+        }
+      }
+      return containingBlockWidth;
+    });
+  }
+
   // https://www.w3.org/TR/css-grid-1/#algo-init
   void initializeTrackSizes(Dimension dimension) {
     auto& tracks = dimension == Dimension::Width ? columnTracks : rowTracks;
@@ -1365,11 +1433,9 @@ struct TrackSizing {
           break;
 
         case Justify::SpaceEvenly:
-          if (numTracks > 0) {
-            // negative free space is not distributed with space evenly, checkout grid_justify_content_space_evenly_negative_space_gap fixture
-            result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks + 1));
-            result.startOffset = result.betweenTracksOffset;
-          }
+          // negative free space is not distributed with space evenly, checkout grid_justify_content_space_evenly_negative_space_gap fixture
+          result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks + 1));
+          result.startOffset = result.betweenTracksOffset;
           break;
 
         case Justify::Start:
@@ -1407,11 +1473,9 @@ struct TrackSizing {
           break;
 
         case Align::SpaceEvenly:
-          if (numTracks > 0) {
-            // negative free space is not distributed with space evenly, checkout grid_align_content_space_evenly_negative_space_gap fixture
-            result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks + 1));
-            result.startOffset = result.betweenTracksOffset;
-          }
+          // negative free space is not distributed with space evenly, checkout grid_align_content_space_evenly_negative_space_gap fixture
+          result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks + 1));
+          result.startOffset = result.betweenTracksOffset;
           break;
 
         case Align::Auto:
@@ -1573,7 +1637,27 @@ struct TrackSizing {
     return distribution.effectiveGap;
   }
 
-  float calculateEffectiveColumnGapForEstimation() {
+  float calculateEffectiveRowGapFromBaseSizes() {
+    auto rowGap = node->style().computeGapForDimension(Dimension::Height, containerInnerHeight);
+
+    if (!yoga::isDefined(containerInnerHeight)) {
+      return rowGap;
+    }
+
+    float totalTrackSize = 0.0f;
+    for (auto& track : rowTracks) {
+      totalTrackSize += track.baseSize;
+    }
+
+    float totalGapSize = rowTracks.size() > 1 ? rowGap * (rowTracks.size() - 1) : 0.0f;
+    float freeSpace = containerInnerHeight - totalTrackSize - totalGapSize;
+
+    auto distribution = calculateContentDistribution(Dimension::Height, freeSpace);
+
+    return distribution.effectiveGap;
+  }
+
+  float calculateEffectiveColumnGapFromBaseSizes() {
     auto columnGap = node->style().computeGapForDimension(Dimension::Width, containerInnerWidth);
 
     if (!yoga::isDefined(containerInnerWidth)) {

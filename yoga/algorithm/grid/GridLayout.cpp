@@ -90,6 +90,8 @@ void calculateGridLayoutInternal(Node* node,
   auto autoPlacement = ResolvedAutoPlacement::resolveGridItemPlacements(node);
   // Create the grid tracks (auto and explicit = implicit grid)
   auto gridTracks = createGridTracks(node, autoPlacement);
+  // At this point, we have grid items final positions and implicit grid tracks
+  
   // Step 2: Find the size of the grid container, per § 5.2 Sizing Grid Containers.
   // If grid container size is not definite, we have to run the track sizing algorithm to find the size of the grid container.
   // Note: During this phase, cyclic <percentage>s in track sizes are treated as auto.
@@ -116,80 +118,9 @@ void calculateGridLayoutInternal(Node* node,
       depth,
       generationCount);
       
-      // 11.1.1 First, the track sizing algorithm is used to resolve the sizes of the grid columns.
-      // If calculating the layout of a grid item in this step depends on the available space in the block axis, assume the available space that it would have if any row with a definite max track sizing function had that size and all other rows were infinite. If both the grid container and all tracks have definite sizes, also apply align-content to find the final effective size of any gaps spanned by such items; otherwise ignore the effects of track alignment in this estimation.
-      
-      // Precalculate effective row gap
-      auto effectiveRowGap = trackSizing.calculateEffectiveRowGapForEstimation();
-      
-      trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
-        float containingBlockHeight = 0.0f;
-        for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
-          if (rowTracks[i].maxSizingFunction.isDefined() &&
-              rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).isDefined()) {
-            containingBlockHeight += rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).unwrap();
-            if (i < item.rowEnd - 1) {
-              containingBlockHeight += effectiveRowGap;
-            }
-          } else {
-            return YGUndefined;
-          }
-        }
-        return containingBlockHeight;
-      });
+      // Run the Grid Sizing Algorithm (11.1.1 through 11.1.4)
+      trackSizing.runGridSizingAlgorithm();
 
-      // 11.1.2 Next, the track sizing algorithm resolves the sizes of the grid rows.
-      // To find the inline-axis available space for any items whose block-axis size contributions require it,
-      // use the grid column sizes calculated in the previous step. If the grid container's inline size is definite,
-      // also apply justify-content to account for the effective column gap sizes.
-
-      // Precalculate effective column gap
-      auto effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
-
-      trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
-        float containingBlockWidth = 0.0f;
-
-        for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
-          containingBlockWidth += columnTracks[i].baseSize;
-          if (i < item.columnEnd - 1) {
-            containingBlockWidth += effectiveColumnGap;
-          }
-        }
-        return containingBlockWidth;
-      });
-
-      // 11.1.3 Then, if the min-content contribution of any grid item has changed based on
-      // the row sizes and alignment calculated in step 2, re-resolve the sizes of the grid
-      // columns with the new min-content and max-content contributions (once only).
-      trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
-        float containingBlockHeight = 0.0f;
-        for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
-          containingBlockHeight += rowTracks[i].baseSize;
-          if (i < item.rowEnd - 1) {
-            containingBlockHeight += effectiveRowGap;
-          }
-        }
-        return containingBlockHeight;
-      });
-
-      // 11.1.4 Next, if the min-content contribution of any grid item has changed based on
-      // the column sizes and alignment calculated in step 3, re-resolve the sizes of the
-      // grid rows with the new min-content and max-content contributions (once only).
-      effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
-
-      trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
-        float containingBlockWidth = 0.0f;
-
-        for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
-          containingBlockWidth += columnTracks[i].baseSize;
-          if (i < item.columnEnd - 1) {
-            containingBlockWidth += effectiveColumnGap;
-          }
-        }
-        return containingBlockWidth;
-      });
-
-      // Now calculate container dimensions from the final track sizes
       if (!widthIsDefinite) {
         auto totalTrackWidth = trackSizing.getTotalBaseSize(Dimension::Width);
         containerInnerWidth = boundAxis(
@@ -257,82 +188,9 @@ void calculateGridLayoutInternal(Node* node,
     depth,
     generationCount);
 
-  // https://www.w3.org/TR/css-grid-1/#algo-grid-sizing
-  // 11.1.1 First, the track sizing algorithm is used to resolve the sizes of the grid columns.
-  auto effectiveRowGap = trackSizing.calculateEffectiveRowGapForEstimation();
+  // Run the Grid Sizing Algorithm (11.1.1 through 11.1.4)
+  trackSizing.runGridSizingAlgorithm();
 
-  trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
-    float containingBlockHeight = 0.0f;
-    for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
-      if (rowTracks[i].maxSizingFunction.isDefined() &&
-          rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).isDefined()) {
-        containingBlockHeight += rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).unwrap();
-        if (i < item.rowEnd - 1) {
-          containingBlockHeight += effectiveRowGap;
-        }
-      } else {
-        return YGUndefined;
-      }
-    }
-    return containingBlockHeight;
-  });
-
-  // 11.1.2 Next, the track sizing algorithm resolves the sizes of the grid rows.
-  auto effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
-
-  trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
-    float containingBlockWidth = 0.0f;
-
-    for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
-      containingBlockWidth += columnTracks[i].baseSize;
-      if (i < item.columnEnd - 1) {
-        containingBlockWidth += effectiveColumnGap;
-      }
-    }
-    return containingBlockWidth;
-  });
-
-  // 11.1.3 Then, if the min-content contribution of any grid item has changed based on
-  // the row sizes and alignment calculated in step 2, re-resolve the sizes of the grid
-  // columns with the new min-content and max-content contributions (once only).
-  //
-  // This is necessary for items whose inline size depends on block size, such as:
-  // - Items with aspect-ratio whose width depends on computed row height
-  // - Wrapped column flex containers
-  // - Orthogonal flows
-
-  // Re-initialize column track sizes and re-run column sizing with actual row heights
-  trackSizing.runTrackSizing(Dimension::Width, [&](const GridItemArea& item) -> float {
-    float containingBlockHeight = 0.0f;
-    for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
-      containingBlockHeight += rowTracks[i].baseSize;
-      if (i < item.rowEnd - 1) {
-        containingBlockHeight += effectiveRowGap;
-      }
-    }
-    return containingBlockHeight;
-  });
-
-  // 11.1.4 Next, if the min-content contribution of any grid item has changed based on
-  // the column sizes and alignment calculated in step 3, re-resolve the sizes of the
-  // grid rows with the new min-content and max-content contributions (once only).
-
-  // Recalculate effective column gap with new column sizes
-  effectiveColumnGap = trackSizing.calculateEffectiveColumnGapForEstimation();
-
-  // Re-run row sizing with the new column sizes
-  trackSizing.runTrackSizing(Dimension::Height, [&](const GridItemArea& item) -> float {
-    float containingBlockWidth = 0.0f;
-
-    for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
-      containingBlockWidth += columnTracks[i].baseSize;
-      if (i < item.columnEnd - 1) {
-        containingBlockWidth += effectiveColumnGap;
-      }
-    }
-    return containingBlockWidth;
-  });
-  
   // Layout grid items
   // Step 4: Lay out the grid items into their respective containing blocks. Each grid area’s width and height are considered definite for this purpose.
   auto gridWidth = trackSizing.getTotalBaseSize(Dimension::Width);
