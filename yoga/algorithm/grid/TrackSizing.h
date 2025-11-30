@@ -15,6 +15,12 @@
 
 namespace facebook::yoga {
 
+struct ContentDistribution {
+  float startOffset = 0.0f;
+  float betweenTracksOffset = 0.0f;
+  float effectiveGap = 0.0f;
+};
+
 struct ItemConstraint {
   float width;
   float height;
@@ -23,6 +29,10 @@ struct ItemConstraint {
   float containingBlockWidth;
   float containingBlockHeight;
 };
+
+// Function type for estimating cross-dimension containing block size
+// Takes an item and returns the estimated containing block size in the cross dimension
+using CrossDimensionEstimator = std::function<float(const GridItemArea&)>;
 
 struct TrackSizing {
   Node* node;
@@ -39,6 +49,7 @@ struct TrackSizing {
   LayoutData& layoutMarkerData;
   uint32_t depth;
   uint32_t generationCount;
+  CrossDimensionEstimator crossDimensionEstimator;
 
   TrackSizing(
     yoga::Node* node,
@@ -71,7 +82,10 @@ struct TrackSizing {
     generationCount(generationCount) {}
 
   // https://www.w3.org/TR/css-grid-1/#algo-track-sizing
-  void runTrackSizing(Dimension dimension) {
+  void runTrackSizing(Dimension dimension, CrossDimensionEstimator estimator = nullptr) {
+    // Store the estimator for use in calculateItemConstraints
+    crossDimensionEstimator = estimator;
+
     // Step 1: Initialize Track Sizes
     initializeTrackSizes(dimension);
     // Step 2: Resolve Intrinsic Track Sizes
@@ -1262,18 +1276,16 @@ struct TrackSizing {
     return totalBaseSize;
   }
 
-  std::pair<float, float> getContainingBlockSizeForItem(const GridItemArea& item) {
+  std::pair<float, float> getContainingBlockSizeForItem(const GridItemArea& item, float effectiveColumnGap, float effectiveRowGap) {
     float containingBlockWidth = 0.0f;
     float containingBlockHeight = 0.0f;
-    auto columnGap = node->style().computeGapForDimension(Dimension::Width, containerInnerWidth);
-    auto rowGap = node->style().computeGapForDimension(Dimension::Height, containerInnerHeight);
     
     // Calculate width: sum of spanned column tracks + gaps
     for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
       containingBlockWidth += columnTracks[i].baseSize;
       // Add column gap if not the last spanned track
       if (i < item.columnEnd - 1) {
-        containingBlockWidth += columnGap;
+        containingBlockWidth += effectiveColumnGap;
       }
     }
     
@@ -1282,78 +1294,145 @@ struct TrackSizing {
       containingBlockHeight += rowTracks[i].baseSize;
       // Add row gap if not the last spanned track
       if (i < item.rowEnd - 1) {
-        containingBlockHeight += rowGap;
+        containingBlockHeight += effectiveRowGap;
       }
     }
     
     return std::make_pair(containingBlockWidth, containingBlockHeight);
   }
 
-  ItemConstraint calculateItemConstraints(const GridItemArea& item, Dimension dimension) {
-    float containingBlockWidth = 0.0f;
-    float containingBlockHeight = 0.0f;
-    auto rowGap = node->style().computeGapForDimension(Dimension::Height, containerInnerHeight);
-    auto columnGap = node->style().computeGapForDimension(Dimension::Width, containerInnerWidth);
+  ContentDistribution calculateContentDistribution(
+    Dimension dimension,
+    float freeSpace) {
+    auto numTracks = dimension == Dimension::Width ? columnTracks.size() : rowTracks.size();
+    auto containerSize = dimension == Dimension::Width ? containerInnerWidth : containerInnerHeight;
+    auto baseGap = node->style().computeGapForDimension(dimension, containerSize);
+    
+    ContentDistribution result;
+    result.effectiveGap = baseGap;
 
-    for (size_t i = item.rowStart; i < item.rowEnd && i < rowTracks.size(); i++) {
-      if (isFixedSizingFunction(rowTracks[i].maxSizingFunction, containerInnerHeight)) {
-        containingBlockHeight += rowTracks[i].maxSizingFunction.resolve(containerInnerHeight).unwrap();
-        if (i < item.rowEnd - 1) {
-          containingBlockHeight += rowGap;
-        }
-      } else {
-        containingBlockHeight = YGUndefined;
-        break;
-      }
+    if (yoga::inexactEquals(freeSpace, 0.0f)) {
+      return result;
     }
 
-    // In trackSizing columnTracks
-    // If calculating the layout of a grid item in this step depends on the available space in the block axis, assume the available space that it would have if any row with a definite max track sizing function had that size and all other rows were infinite.
     if (dimension == Dimension::Width) {
-      for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
-        if (isFixedSizingFunction(columnTracks[i].maxSizingFunction, containerInnerWidth)) {
-          containingBlockWidth += columnTracks[i].maxSizingFunction.resolve(containerInnerWidth).unwrap();
-          if (i < item.columnEnd - 1) {
-            containingBlockWidth += columnGap;
-          }
-        } else {
-          containingBlockWidth = YGUndefined;
+      auto justifyContent = node->style().justifyContent();
+      switch (justifyContent) {
+        case Justify::Center:
+          result.startOffset = freeSpace / 2.0f;
           break;
-        }
+
+        case Justify::End:
+          result.startOffset = freeSpace;
+          break;
+
+        case Justify::SpaceBetween:
+          if (numTracks > 1) {
+            // negative free space is not distributed with space between, checkout grid_justify_content_space_between_negative_space_gap fixture
+            result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks - 1));
+          }
+          break;
+
+        case Justify::SpaceAround:
+          if (numTracks > 0) {
+            // negative free space is not distributed with space around, checkout grid_justify_content_space_around_negative_space_gap fixture
+            result.betweenTracksOffset = std::max(0.0f, freeSpace / numTracks);
+            result.startOffset = std::max(0.0f, result.betweenTracksOffset / 2.0f);
+          }
+          break;
+
+        case Justify::SpaceEvenly:
+          if (numTracks > 0) {
+            // negative free space is not distributed with space evenly, checkout grid_justify_content_space_evenly_negative_space_gap fixture
+            result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks + 1));
+            result.startOffset = result.betweenTracksOffset;
+          }
+          break;
+
+        case Justify::Start:
+        case Justify::FlexStart:
+        case Justify::FlexEnd:
+        case Justify::Stretch:
+        case Justify::Auto:
+        default:
+          break;
       }
-    } 
-    // In trackSizing rowTracks
-    // To find the inline-axis available space for any items whose block-axis size contributions require it, use the grid column sizes calculated in the previous step. If the grid container’s inline size is definite, also apply justify-content to account for the effective column gap sizes.
-    else if (dimension == Dimension::Height) {
-      for (size_t i = item.columnStart; i < item.columnEnd && i < columnTracks.size(); i++) {
-        containingBlockWidth += columnTracks[i].baseSize;
-        if (i < item.columnEnd - 1) {
-          containingBlockWidth += columnGap;
-        }
+    } else {
+      auto alignContent = node->style().alignContent();
+      switch (alignContent) {
+        case Align::Center:
+          // content center works with negative free space too
+          // refer grid_align_content_center_negative_space_gap fixture
+          result.startOffset = freeSpace / 2.0f;
+          break;
+        case Align::End:
+          result.startOffset = freeSpace;
+          break;
+        case Align::SpaceBetween:
+          if (numTracks > 1) {
+            // negative free space is not distributed with space between, checkout grid_align_content_space_between_negative_space_gap fixture
+            result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks - 1));
+          }
+          break;
+
+        case Align::SpaceAround:
+          if (numTracks > 0) {
+            // negative free space is not distributed with space around, checkout grid_align_content_space_around_negative_space_gap fixture
+            result.betweenTracksOffset = std::max(0.0f, freeSpace / numTracks);
+            result.startOffset = std::max(0.0f, result.betweenTracksOffset / 2.0f);
+          }
+          break;
+
+        case Align::SpaceEvenly:
+          if (numTracks > 0) {
+            // negative free space is not distributed with space evenly, checkout grid_align_content_space_evenly_negative_space_gap fixture
+            result.betweenTracksOffset = std::max(0.0f, freeSpace / (numTracks + 1));
+            result.startOffset = result.betweenTracksOffset;
+          }
+          break;
+
+        case Align::Auto:
+        case Align::FlexStart:
+        case Align::FlexEnd:
+        case Align::Stretch:
+        case Align::Baseline:
+        case Align::Start:
+        default:
+          break;
       }
     }
 
-    float availableWidth = YGUndefined;
-    float availableHeight = YGUndefined;
-    SizingMode itemWidthSizingMode = SizingMode::MaxContent;
-    SizingMode itemHeightSizingMode = SizingMode::MaxContent;
+    result.effectiveGap = baseGap + result.betweenTracksOffset;
+    return result;
+  }
 
-    const auto marginInline = item.node->style().computeMarginForAxis(FlexDirection::Row, containingBlockWidth);
-    const auto marginBlock = item.node->style().computeMarginForAxis(FlexDirection::Column, containingBlockHeight);
+  ItemConstraint calculateItemConstraints(const GridItemArea& item, Dimension dimension) {
+    float containingBlockWidth = YGUndefined;
+    float containingBlockHeight = YGUndefined;
+    auto availableWidth = YGUndefined;
+    auto availableHeight = YGUndefined;
+    auto widthSizingMode = SizingMode::MaxContent;
+    auto heightSizingMode = SizingMode::MaxContent;
+    
+    if (dimension == Dimension::Width) {
+      containingBlockHeight = crossDimensionEstimator(item);
+    } else {
+      containingBlockWidth = crossDimensionEstimator(item);
+    }
 
-    if (yoga::isDefined(containingBlockWidth) && itemWidthSizingMode != SizingMode::StretchFit) {
-      itemWidthSizingMode = SizingMode::FitContent;
+    if (yoga::isDefined(containingBlockWidth)) {
+      widthSizingMode = SizingMode::FitContent;
       availableWidth = containingBlockWidth;
     }
 
-    if (yoga::isDefined(containingBlockHeight) && itemHeightSizingMode != SizingMode::StretchFit) {
-        itemHeightSizingMode = SizingMode::FitContent;
-        availableHeight = containingBlockHeight;
+    if (yoga::isDefined(containingBlockHeight)) {
+      heightSizingMode = SizingMode::FitContent;
+      availableHeight = containingBlockHeight;
     }
 
-
+    const auto marginInline = item.node->style().computeMarginForAxis(FlexDirection::Row, containingBlockWidth);
     if (item.node->hasDefiniteLength(Dimension::Width, containingBlockWidth)) {
-      itemWidthSizingMode = SizingMode::StretchFit;
+      widthSizingMode = SizingMode::StretchFit;
       availableWidth = item.node->getResolvedDimension(
         direction,
         Dimension::Width,
@@ -1361,8 +1440,9 @@ struct TrackSizing {
         containingBlockWidth).unwrap() + marginInline;
     }
 
+    const auto marginBlock = item.node->style().computeMarginForAxis(FlexDirection::Column, containingBlockHeight);
     if (item.node->hasDefiniteLength(Dimension::Height, containingBlockHeight)) {
-      itemHeightSizingMode = SizingMode::StretchFit;
+      heightSizingMode = SizingMode::StretchFit;
       availableHeight = item.node->getResolvedDimension(
         direction,
         Dimension::Height,
@@ -1390,29 +1470,79 @@ struct TrackSizing {
       // https://drafts.csswg.org/css-sizing-4/#aspect-ratio
       // a non-replaced absolutely-positioned box treats justify-self: normal as stretch, not as start (CSS Box Alignment 3 § 6.1.2 Absolutely-Positioned Boxes), even if it has a preferred aspect ratio
       // i.e. aspect ratio is only applied when item is not stretch aligned or margin is auto (auto margin items are not stretched) 
-      if (itemWidthSizingMode == SizingMode::StretchFit &&
-          itemHeightSizingMode != SizingMode::StretchFit && (alignSelf != Align::Stretch || hasMarginBlockAuto)) {
+      if (widthSizingMode == SizingMode::StretchFit &&
+          heightSizingMode != SizingMode::StretchFit && (alignSelf != Align::Stretch || hasMarginBlockAuto)) {
         if (!yoga::inexactEquals(itemStyle.aspectRatio().unwrap(), 0.0f)) {
           availableHeight = marginBlock +
           (availableWidth - marginInline) / itemStyle.aspectRatio().unwrap();
-          itemHeightSizingMode = SizingMode::StretchFit;
+          heightSizingMode = SizingMode::StretchFit;
         }
-      } else if (itemHeightSizingMode == SizingMode::StretchFit &&
-                  itemWidthSizingMode != SizingMode::StretchFit && (justifySelf != Justify::Stretch || hasMarginInlineAuto)) {
+      } else if (heightSizingMode == SizingMode::StretchFit &&
+                  widthSizingMode != SizingMode::StretchFit && (justifySelf != Justify::Stretch || hasMarginInlineAuto)) {
         availableWidth = marginInline +
             (availableHeight - marginBlock) * itemStyle.aspectRatio().unwrap();
-        itemWidthSizingMode = SizingMode::StretchFit;
+        widthSizingMode = SizingMode::StretchFit;
       }
     }
 
     return ItemConstraint{
       availableWidth,
       availableHeight,
-      itemWidthSizingMode,
-      itemHeightSizingMode,
+      widthSizingMode,
+      heightSizingMode,
       containingBlockWidth,
       containingBlockHeight
     };
+  }
+
+  float calculateEffectiveRowGapForEstimation() {
+    auto rowGap = node->style().computeGapForDimension(Dimension::Height, containerInnerHeight);
+
+    if (!yoga::isDefined(containerInnerHeight)) {
+      return rowGap;
+    }
+
+    bool allTracksDefinite = true;
+    float totalTrackSize = 0.0f;
+    for (auto& track : rowTracks) {
+      if (isFixedSizingFunction(track.maxSizingFunction, containerInnerHeight)) {
+        totalTrackSize += track.maxSizingFunction.resolve(containerInnerHeight).unwrap();
+      } else {
+        allTracksDefinite = false;
+        break;
+      }
+    }
+
+    if (!allTracksDefinite) {
+      return rowGap;
+    }
+
+    float totalGapSize = rowTracks.size() > 1 ? rowGap * (rowTracks.size() - 1) : 0.0f;
+    float freeSpace = containerInnerHeight - totalTrackSize - totalGapSize;
+
+    auto distribution = calculateContentDistribution(Dimension::Height, freeSpace);
+
+    return distribution.effectiveGap;
+  }
+
+  float calculateEffectiveColumnGapForEstimation() {
+    auto columnGap = node->style().computeGapForDimension(Dimension::Width, containerInnerWidth);
+
+    if (!yoga::isDefined(containerInnerWidth)) {
+      return columnGap;
+    }
+
+    float totalTrackSize = 0.0f;
+    for (auto& track : columnTracks) {
+      totalTrackSize += track.baseSize;
+    }
+
+    float totalGapSize = columnTracks.size() > 1 ? columnGap * (columnTracks.size() - 1) : 0.0f;
+    float freeSpace = containerInnerWidth - totalTrackSize - totalGapSize;
+
+    auto distribution = calculateContentDistribution(Dimension::Width, freeSpace);
+
+    return distribution.effectiveGap;
   }
 };
 
