@@ -41,20 +41,131 @@ constexpr float kUnconstrainedEpsilon = 0.5f;
 
 std::atomic<uint32_t> gCurrentGenerationCount(0);
 
-// Whether laying out `node` resolves a percentage against a height it doesn't
-// define itself: a height, min/max height or flex basis in percent on the
-// node, or on a descendant whose percentage reaches the node's available
-// height. Below a node with a definite height (in points, or from an aspect
-// ratio and a defined width) percentages resolve against that height, and
+// The checks below accept only values known not to read the available height,
+// so any other value, including one added to Yoga later, turns the reuse off
+// instead of producing a wrong layout.
+
+// Percentages and keywords (stretch, fit-content, ...) of heights resolve
+// against the available height.
+static bool heightIsIndependent(const Style::SizeLength& length) {
+  return length.isUndefined() || length.isAuto() || length.isPoints();
+}
+
+static bool minOrMaxHeightIsIndependent(const Style::SizeLength& length) {
+  return length.isUndefined() || length.isPoints();
+}
+
+// A width, including a percentage, resolves to the available width, which the
+// measurement cache matches exactly. Percentage min/max widths are not
+// accepted: reusing measurements with them still changed layouts when tested.
+static bool widthIsIndependent(const Style::SizeLength& length) {
+  return length.isUndefined() || length.isAuto() || length.isPoints() ||
+      length.isPercent();
+}
+
+static bool minOrMaxWidthIsIndependent(const Style::SizeLength& length) {
+  return length.isUndefined() || length.isPoints();
+}
+
+// Percentage gaps resolve against the available size. Percentage margins,
+// paddings and borders are not accepted: reusing measurements with them still
+// changed layouts when tested. A negative margin lets a descendant reach the
+// available height while the node stays below it.
+static bool edgesAndGapsAreIndependent(const Style& style) {
+  for (const auto edge : ordinals<Edge>()) {
+    const auto margin = style.margin(edge);
+    const auto padding = style.padding(edge);
+    const auto border = style.border(edge);
+    if (!(margin.isUndefined() || margin.isAuto() ||
+          (margin.isPoints() && margin.value().unwrap() >= 0.0f)) ||
+        !(padding.isUndefined() || padding.isPoints()) ||
+        !(border.isUndefined() || border.isPoints())) {
+      return false;
+    }
+  }
+  for (const auto gutter : ordinals<Gutter>()) {
+    const auto gap = style.gap(gutter);
+    if (!(gap.isUndefined() || gap.isPoints())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Baseline and space-* alignment, and wrapping lines in a column, place
+// content using the available height. Grid tracks can size against it.
+static bool alignAndDisplayAreIndependent(const Style& style) {
+  const auto alignIsIndependent = [](Align align) {
+    switch (align) {
+      case Align::Auto:
+      case Align::FlexStart:
+      case Align::Center:
+      case Align::FlexEnd:
+      case Align::Stretch:
+      case Align::Start:
+      case Align::End:
+        return true;
+      case Align::Baseline:
+      case Align::SpaceBetween:
+      case Align::SpaceAround:
+      case Align::SpaceEvenly:
+        return false;
+    }
+    return false;
+  };
+  if (!alignIsIndependent(style.alignItems()) ||
+      !alignIsIndependent(style.alignSelf()) ||
+      (isColumn(style.flexDirection()) && style.flexWrap() != Wrap::NoWrap)) {
+    return false;
+  }
+  switch (style.display()) {
+    case Display::Flex:
+    case Display::None:
+    case Display::Contents:
+      return true;
+    case Display::Grid:
+      return false;
+  }
+  return false;
+}
+
+// A column distributes the available height over its children's flex bases
+// and grow factors. A definite basis (including the zero basis of a positive
+// `flex`) is kept from an earlier pass, and grow factors adding up to less
+// than 1 take only part of the free space, so the column can depend on the
+// available height without filling it.
+static bool columnChildrenAreIndependent(const yoga::Node* node) {
+  float totalGrow = 0.0f;
+  for (const auto* child : node->getLayoutChildren()) {
+    const auto& style = child->style();
+    const auto flexBasis = style.flexBasis();
+    const auto flex = style.flex();
+    if (!(flexBasis.isUndefined() || flexBasis.isAuto()) ||
+        (flex.isDefined() && flex.unwrap() > 0.0f)) {
+      return false;
+    }
+    totalGrow += child->resolveFlexGrow();
+  }
+  return totalGrow == 0.0f || totalGrow >= 1.0f;
+}
+
+// Whether a measurement of `node` may depend on its available height even when
+// it doesn't fill it. Below a node with a definite height (in points, or from
+// an aspect ratio and a defined width) values resolve against that height, and
 // absolutely positioned descendants don't affect the node's size, so neither
-// counts. Children are read from the flags their own layouts left behind,
+// is checked. Children are read from the flags their own layouts left behind,
 // except `display: contents` ones, which are not laid out themselves.
-static bool resolvesHeightPercentage(const yoga::Node* node) {
+static bool mayDependOnAvailableHeight(const yoga::Node* node) {
   const auto& style = node->style();
-  if (style.dimension(Dimension::Height).isPercent() ||
-      style.minDimension(Dimension::Height).isPercent() ||
-      style.maxDimension(Dimension::Height).isPercent() ||
-      style.flexBasis().isPercent()) {
+  if (node->hasMinContentMeasureFunc() ||
+      !heightIsIndependent(style.dimension(Dimension::Height)) ||
+      !minOrMaxHeightIsIndependent(style.minDimension(Dimension::Height)) ||
+      !minOrMaxHeightIsIndependent(style.maxDimension(Dimension::Height)) ||
+      !widthIsIndependent(style.dimension(Dimension::Width)) ||
+      !minOrMaxWidthIsIndependent(style.minDimension(Dimension::Width)) ||
+      !minOrMaxWidthIsIndependent(style.maxDimension(Dimension::Width)) ||
+      !edgesAndGapsAreIndependent(style) ||
+      !alignAndDisplayAreIndependent(style)) {
     return true;
   }
   if (style.dimension(Dimension::Height).isPoints() ||
@@ -62,6 +173,9 @@ static bool resolvesHeightPercentage(const yoga::Node* node) {
        (style.dimension(Dimension::Width).isPoints() ||
         style.dimension(Dimension::Width).isPercent()))) {
     return false;
+  }
+  if (isColumn(style.flexDirection()) && !columnChildrenAreIndependent(node)) {
+    return true;
   }
   for (const auto* child : node->getChildren()) {
     if (child->style().positionType() == PositionType::Absolute) {
@@ -71,12 +185,12 @@ static bool resolvesHeightPercentage(const yoga::Node* node) {
       case Display::None:
         break;
       case Display::Contents:
-        if (resolvesHeightPercentage(child)) {
+        if (mayDependOnAvailableHeight(child)) {
           return true;
         }
         break;
       default:
-        if (child->resolvesHeightPercentage()) {
+        if (child->mayDependOnAvailableHeight()) {
           return true;
         }
         break;
@@ -2857,9 +2971,9 @@ bool calculateLayoutInternal(
     // as long as the new available height still fits that measured height.
     // Content in a scroll view is measured with the container's growing
     // height, so without this every clean child misses the cache whenever the
-    // content gets taller. That doesn't hold if a percentage in the subtree
-    // is resolved against the available height.
-    if (cachedResults == nullptr && !node->resolvesHeightPercentage() &&
+    // content gets taller. That doesn't hold if anything in the subtree may
+    // read the available height.
+    if (cachedResults == nullptr && !node->mayDependOnAvailableHeight() &&
         heightSizingMode == SizingMode::FitContent &&
         yoga::isDefined(availableHeight)) {
       const float marginColumn =
@@ -2907,7 +3021,7 @@ bool calculateLayoutInternal(
 
     layout->lastOwnerDirection = ownerDirection;
     layout->configVersion = node->getConfig()->getVersion();
-    node->setResolvesHeightPercentage(resolvesHeightPercentage(node));
+    node->setMayDependOnAvailableHeight(mayDependOnAvailableHeight(node));
 
     if (cachedResults == nullptr) {
       layoutMarkerData.maxMeasureCache = std::max(
